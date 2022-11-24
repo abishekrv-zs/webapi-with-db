@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 )
@@ -17,7 +18,14 @@ func main() {
 	}
 	defer db.Close()
 
-	http.HandleFunc("/employees", EmployeeHandler)
-	log.Println("Starting server at http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	router := mux.NewRouter()
+	router.HandleFunc("/employee", getEmployeeHandler).Methods("GET")
+	router.HandleFunc("/employee", postEmployeeHandler).Methods("POST")
+	router.HandleFunc("/department", getDepartmentHandler).Methods("GET")
+	router.HandleFunc("/department", postDepartmentHandler).Methods("POST")
+
+	//router.HandleFunc("/department{id}", getDepartmentByIdHandler).Methods("GET")
+	//router.HandleFunc("/employee/{id}", getEmployeeByIdHandler).Methods("GET")
+
+	log.Fatal(http.ListenAndServe(":8080", router))
 }
