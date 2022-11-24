@@ -18,7 +18,7 @@ func EmployeeHandler(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		allEmp := []employee{}
+		allEmp := make([]employee, 0)
 		for rows.Next() {
 			var emp employee
 			if err := rows.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Dept.Id, &emp.Dept.Name); err != nil {
@@ -40,10 +40,6 @@ func EmployeeHandler(w http.ResponseWriter, r *http.Request) {
 		if _, err := w.Write(respBody); err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if _, err := w.Write(respBody); err != nil {
-			log.Println(err)
 			return
 		}
 
