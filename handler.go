@@ -17,6 +17,8 @@ func getEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 	}
 
+	defer rows.Close()
+
 	var allEmp []employee
 	for rows.Next() {
 		var emp employee
@@ -42,7 +44,10 @@ func getDepartmentHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("select id, name from department")
 	if err != nil {
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
+		return
 	}
+
+	defer rows.Close()
 
 	var allDep []department
 	for rows.Next() {
@@ -73,6 +78,7 @@ func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var emp employee
 	if err := json.Unmarshal(reqBody, &emp); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
@@ -87,6 +93,7 @@ func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec("insert into employee values(?,?,?,?)", genUUID, emp.Name, emp.Dept.Id, emp.PhoneNumber)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
@@ -99,6 +106,7 @@ func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 
 	respBody, err := json.Marshal(emp)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
@@ -116,6 +124,7 @@ func postDepartmentHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var dep department
 	if err := json.Unmarshal(reqBody, &dep); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
@@ -136,12 +145,14 @@ func postDepartmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	row := db.QueryRow("select id, name from department where id=?", genUUID)
 	if err := row.Scan(&dep.Id, &dep.Name); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
 
 	respBody, err := json.Marshal(dep)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
