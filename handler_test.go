@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
@@ -30,20 +31,18 @@ func TestGetEmployeeHandler(t *testing.T) {
 
 	tests := []struct {
 		description string
-		reqBody     []byte
 		expCode     int
 		expResp     string
 	}{
 		{
 			description: "Case get all employee `/employee`",
-			reqBody:     nil,
 			expCode:     200,
 			expResp:     `[{"id":"a070ba78-6ae8-11ed-8e82-64bc58925a40","name":"Abishek","phoneNumber":"1234567890","dept":{"id":"55e95991-6ae8-11ed-8e82-64bc58925a40","name":"Software"}}]`,
 		},
 	}
 
 	for _, tc := range tests {
-		mockReq, _ := http.NewRequest("GET", "/employee", bytes.NewReader(tc.reqBody))
+		mockReq, _ := http.NewRequest("GET", "/employee", nil)
 		mockResp := httptest.NewRecorder()
 
 		getEmployeeHandler(mockResp, mockReq)
@@ -68,20 +67,18 @@ func TestGetDepartmentHandler(t *testing.T) {
 
 	tests := []struct {
 		description string
-		reqBody     []byte
 		expCode     int
 		expResp     string
 	}{
 		{
 			description: "Case get all department `/department`",
-			reqBody:     nil,
 			expCode:     200,
 			expResp:     `[{"id":"55e95991-6ae8-11ed-8e82-64bc58925a40","name":"Software"}]`,
 		},
 	}
 
 	for _, tc := range tests {
-		mockReq, _ := http.NewRequest("GET", "/department", bytes.NewReader(tc.reqBody))
+		mockReq, _ := http.NewRequest("GET", "/department", nil)
 		mockResp := httptest.NewRecorder()
 
 		getDepartmentHandler(mockResp, mockReq)
@@ -102,40 +99,42 @@ func TestPostEmployeeHandler(t *testing.T) {
 	tests := []struct {
 		description string
 		reqBody     employee
-		mockSqlFunc func(e employee)
+		query       string
+		args        map[string]any
+		result      driver.Result
+		mockErr     error
+		expErr      error
 		expCode     int
 	}{
 		{
 			description: "Post a valid employee",
-			reqBody:     employee{Name: "newGuy", PhoneNumber: "3213213211", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "Software"}},
-			mockSqlFunc: func(e employee) {
-				uuid, _ := uuid2.NewUUID()
-				generatedUUID := uuid.String()
-				mock.ExpectExec(insertIntoEmployeeQuery).WithArgs(sqlmock.AnyArg(), e.Name, e.Dept.Id, e.PhoneNumber).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-				rows := mock.NewRows([]string{"id", "name", "phone_number", "department_id", "name"}).
-					AddRow(generatedUUID, e.Name, e.PhoneNumber, e.Dept.Id, e.Dept.Name)
-				mock.ExpectQuery(selectEmployeeByIdQuery).WithArgs(sqlmock.AnyArg()).WillReturnRows(rows)
-			},
-			expCode: 201,
+			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "testDept"}},
+			query:       insertIntoEmployeeQuery,
+			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "55e95991-6ae8-11ed-8e82-64bc58925a40", "phoneNumber": "9876543210"},
+			result:      sqlmock.NewResult(1, 1),
+			mockErr:     nil,
+			expErr:      nil,
+			expCode:     201,
 		},
 		{
-			description: "Post a invalid employee, phone_number > 10 digits",
-			reqBody:     employee{Name: "newGuy", PhoneNumber: "32132132324324325211", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "Software"}},
-			mockSqlFunc: func(e employee) {
-				mock.ExpectExec(insertIntoEmployeeQuery).WithArgs(sqlmock.AnyArg(), e.Name, e.Dept.Id, e.PhoneNumber).
-					WillReturnError(errors.New("sql: length exceeded for varchar 10"))
-			},
-			expCode: 400,
+			description: "Post a invalid employee, phoneNumber > 10 digits",
+			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210000", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "testDept"}},
+			query:       insertIntoEmployeeQuery,
+			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "55e95991-6ae8-11ed-8e82-64bc58925a40", "phoneNumber": "9876543210000"},
+			result:      sqlmock.NewResult(0, 0),
+			mockErr:     errors.New("sql: phoneNumber is a varchar(10) field"),
+			expErr:      nil,
+			expCode:     400,
 		},
 		{
-			description: "Post a invalid employee, department id doesnt exit",
-			reqBody:     employee{Name: "newGuy", PhoneNumber: "3213213211", Dept: department{Id: "-1", Name: "Software"}},
-			mockSqlFunc: func(e employee) {
-				mock.ExpectExec(insertIntoEmployeeQuery).WithArgs(sqlmock.AnyArg(), e.Name, e.Dept.Id, e.PhoneNumber).
-					WillReturnError(errors.New("sql: foreign key reference: dept:id doesnt exits"))
-			},
-			expCode: 400,
+			description: "Post a invalid employee, phoneNumber > 10 digits",
+			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210", Dept: department{Id: "-1", Name: "testDept"}},
+			query:       insertIntoEmployeeQuery,
+			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "-1", "phoneNumber": "9876543210"},
+			result:      sqlmock.NewResult(0, 0),
+			mockErr:     errors.New("sql: dept_id not found"),
+			expErr:      nil,
+			expCode:     400,
 		},
 	}
 
@@ -150,7 +149,7 @@ func TestPostEmployeeHandler(t *testing.T) {
 		mockReq, _ := http.NewRequest("POST", "/employee", bytes.NewReader(reqBody))
 		mockResp := httptest.NewRecorder()
 
-		tc.mockSqlFunc(tc.reqBody)
+		mock.ExpectExec(insertIntoEmployeeQuery).WithArgs(tc.args["id"], tc.args["name"], tc.args["dept_id"], tc.args["phoneNumber"]).WillReturnResult(tc.result).WillReturnError(tc.mockErr)
 
 		postEmployeeHandler(mockResp, mockReq)
 

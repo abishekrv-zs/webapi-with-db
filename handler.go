@@ -99,11 +99,7 @@ func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row := db.QueryRow("select e.id, e.name, phone_number, department_id, d.name from employee e inner join department d on e.department_id = d.id where e.id=?", generatedUUID)
-	if err := row.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Dept.Id, &emp.Dept.Name); err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+	emp.Id = generatedUUID
 
 	respBody, err := json.Marshal(emp)
 	if err != nil {
