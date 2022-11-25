@@ -26,6 +26,6 @@ func main() {
 
 	//router.HandleFunc("/department{id}", getDepartmentByIdHandler).Methods("GET")
 	//router.HandleFunc("/employee/{id}", getEmployeeByIdHandler).Methods("GET")
-
+	log.Println("Starting server at http://localhost:8080/")
 	log.Fatal(http.ListenAndServe(":8080", router))
 }

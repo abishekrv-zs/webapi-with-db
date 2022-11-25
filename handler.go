@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	uuid2 "github.com/google/uuid"
 	"io"
 	"net/http"
 	"os/exec"
@@ -83,22 +84,22 @@ func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uuid, err := exec.Command("uuidgen").Output()
+	uuid, err := uuid2.NewUUID()
 	if err != nil {
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
 
-	genUUID := strings.TrimSpace(string(uuid))
+	generatedUUID := strings.TrimSpace(uuid.String())
 
-	_, err = db.Exec("insert into employee values(?,?,?,?)", genUUID, emp.Name, emp.Dept.Id, emp.PhoneNumber)
+	_, err = db.Exec("insert into employee values(?,?,?,?)", generatedUUID, emp.Name, emp.Dept.Id, emp.PhoneNumber)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
 	}
 
-	row := db.QueryRow("select e.id, e.name, phone_number, department_id, d.name from employee e inner join department d on e.department_id = d.id where e.id=?", genUUID)
+	row := db.QueryRow("select e.id, e.name, phone_number, department_id, d.name from employee e inner join department d on e.department_id = d.id where e.id=?", generatedUUID)
 	if err := row.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Dept.Id, &emp.Dept.Name); err != nil {
 		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
 		return
