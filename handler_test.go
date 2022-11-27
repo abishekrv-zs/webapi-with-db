@@ -1,225 +1,114 @@
 package main
 
 import (
-	"bytes"
-	"database/sql/driver"
-	"encoding/json"
-	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
-	uuid2 "github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-var mock sqlmock.Sqlmock
-
-func TestGetEmployeeHandler(t *testing.T) {
-	db, mock, err = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+func TestGetAllEmployees(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer db.Close()
+	h := myHandler{db: db}
 
-	rows := sqlmock.NewRows([]string{"id", "name", "phone_number", "department_id", "name"}).
-		AddRow("a070ba78-6ae8-11ed-8e82-64bc58925a40", "Abishek", "1234567890", "55e95991-6ae8-11ed-8e82-64bc58925a40", "Software")
+	t.Run("Get all Employee", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/employees", nil)
+		w := httptest.NewRecorder()
 
-	mock.ExpectQuery(selectAllEmployeeQuery).WillReturnRows(rows)
+		mock.ExpectQuery(getAllEmployeeQuery).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "phoneNumber", "department_id", "name"}).
+				AddRow("uuid-for-emp", "testEmp", "9876543210", "uuid-for-dept", "testDept"))
 
-	tests := []struct {
-		description string
-		expCode     int
-		expResp     string
-	}{
-		{
-			description: "Case get all employee `/employee`",
-			expCode:     200,
-			expResp:     `[{"id":"a070ba78-6ae8-11ed-8e82-64bc58925a40","name":"Abishek","phoneNumber":"1234567890","dept":{"id":"55e95991-6ae8-11ed-8e82-64bc58925a40","name":"Software"}}]`,
-		},
-	}
+		h.getAllEmployees(w, req)
+		resp := w.Result()
+		respBody, _ := io.ReadAll(resp.Body)
 
-	for _, tc := range tests {
-		mockReq, _ := http.NewRequest("GET", "/employee", nil)
-		mockResp := httptest.NewRecorder()
+		expBody := `[{"id":"uuid-for-emp","name":"testEmp","phoneNumber":"9876543210","department":{"id":"uuid-for-dept","name":"testDept"}}]`
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, expBody, string(respBody))
+	})
 
-		getEmployeeHandler(mockResp, mockReq)
+	t.Run("Get all employee by a valid dept_id", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/employees?dept_id=valid-dept-id", nil)
+		w := httptest.NewRecorder()
 
-		assert.Equal(t, tc.expCode, mockResp.Code, tc.description)
-		assert.Equal(t, tc.expResp, mockResp.Body.String())
-	}
+		mock.ExpectQuery(getAllEmployeeByDeptIdQuery).WithArgs("valid-dept-id").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "phoneNumber", "department_id", "name"}).
+				AddRow("uuid-for-emp", "testEmp", "9876543210", "valid-dept-id", "testDept"))
+
+		h.getAllEmployees(w, req)
+
+		resp := w.Result()
+		respBody, _ := io.ReadAll(resp.Body)
+
+		expBody := `[{"id":"uuid-for-emp","name":"testEmp","phoneNumber":"9876543210","department":{"id":"valid-dept-id","name":"testDept"}}]`
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, expBody, string(respBody))
+	})
+
+	t.Run("Get all employee by invalid dept_id", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/employees?dept_id=invalid-dept-id", nil)
+		w := httptest.NewRecorder()
+
+		mock.ExpectQuery(getAllEmployeeByDeptIdQuery).WithArgs("invalid-dept-id").
+			WillReturnRows(sqlmock.NewRows([]string{}))
+
+		h.getAllEmployees(w, req)
+		resp := w.Result()
+
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	})
 }
 
-func TestGetDepartmentHandler(t *testing.T) {
-	db, mock, err = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+func TestGetEmployeeById(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer db.Close()
 
-	rows := sqlmock.NewRows([]string{"id", "name"}).
-		AddRow("55e95991-6ae8-11ed-8e82-64bc58925a40", "Software")
+	h := myHandler{db: db}
 
-	mock.ExpectQuery(selectAllDepartmentQuery).WillReturnRows(rows)
+	t.Run("Get employee by valid id", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/employees/{id}", nil)
+		req = mux.SetURLVars(req, map[string]string{"id": "valid-emp-id"})
+		w := httptest.NewRecorder()
 
-	tests := []struct {
-		description string
-		expCode     int
-		expResp     string
-	}{
-		{
-			description: "Case get all department `/department`",
-			expCode:     200,
-			expResp:     `[{"id":"55e95991-6ae8-11ed-8e82-64bc58925a40","name":"Software"}]`,
-		},
-	}
+		mock.ExpectQuery(getEmployeeByIdQuery).WithArgs("valid-emp-id").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "phoneNumber", "department_id", "name"}).
+				AddRow("valid-emp-id", "testEmp", "9876543210", "uuid-for-dept", "testDept"))
 
-	for _, tc := range tests {
-		mockReq, _ := http.NewRequest("GET", "/department", nil)
-		mockResp := httptest.NewRecorder()
+		h.getEmployeeById(w, req)
 
-		getDepartmentHandler(mockResp, mockReq)
+		resp := w.Result()
+		respBody, _ := io.ReadAll(resp.Body)
 
-		assert.Equal(t, tc.expCode, mockResp.Code, tc.description)
-		assert.Equal(t, tc.expResp, mockResp.Body.String())
-	}
+		expResp := `{"id":"valid-emp-id","name":"testEmp","phoneNumber":"9876543210","department":{"id":"uuid-for-dept","name":"testDept"}}`
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, expResp, string(respBody))
+	})
+
+	t.Run("Get employee by invalid id", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/employees/{id}", nil)
+		req = mux.SetURLVars(req, map[string]string{"id": "invalid-emp-id"})
+		w := httptest.NewRecorder()
+
+		mock.ExpectQuery(getEmployeeByIdQuery).WithArgs("invalid-emp-id").
+			WillReturnRows(sqlmock.NewRows([]string{}))
+
+		h.getEmployeeById(w, req)
+
+		resp := w.Result()
+
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	})
 }
-
-func TestPostEmployeeHandler(t *testing.T) {
-	db, mock, err = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer db.Close()
-
-	tests := []struct {
-		description string
-		reqBody     employee
-		query       string
-		args        map[string]any
-		result      driver.Result
-		mockErr     error
-		expErr      error
-		expCode     int
-	}{
-		{
-			description: "Post a valid employee",
-			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "testDept"}},
-			query:       insertIntoEmployeeQuery,
-			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "55e95991-6ae8-11ed-8e82-64bc58925a40", "phoneNumber": "9876543210"},
-			result:      sqlmock.NewResult(1, 1),
-			mockErr:     nil,
-			expErr:      nil,
-			expCode:     201,
-		},
-		{
-			description: "Post a invalid employee, phoneNumber > 10 digits",
-			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210000", Dept: department{Id: "55e95991-6ae8-11ed-8e82-64bc58925a40", Name: "testDept"}},
-			query:       insertIntoEmployeeQuery,
-			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "55e95991-6ae8-11ed-8e82-64bc58925a40", "phoneNumber": "9876543210000"},
-			result:      sqlmock.NewResult(0, 0),
-			mockErr:     errors.New("sql: phoneNumber is a varchar(10) field"),
-			expErr:      nil,
-			expCode:     400,
-		},
-		{
-			description: "Post a invalid employee, phoneNumber > 10 digits",
-			reqBody:     employee{Name: "testEmp", PhoneNumber: "9876543210", Dept: department{Id: "-1", Name: "testDept"}},
-			query:       insertIntoEmployeeQuery,
-			args:        map[string]any{"id": sqlmock.AnyArg(), "name": "testEmp", "dept_id": "-1", "phoneNumber": "9876543210"},
-			result:      sqlmock.NewResult(0, 0),
-			mockErr:     errors.New("sql: dept_id not found"),
-			expErr:      nil,
-			expCode:     400,
-		},
-	}
-
-	for _, tc := range tests {
-		//mock http
-		reqBody, err := json.Marshal(tc.reqBody)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		mockReq, _ := http.NewRequest("POST", "/employee", bytes.NewReader(reqBody))
-		mockResp := httptest.NewRecorder()
-
-		mock.ExpectExec(insertIntoEmployeeQuery).WithArgs(tc.args["id"], tc.args["name"], tc.args["dept_id"], tc.args["phoneNumber"]).WillReturnResult(tc.result).WillReturnError(tc.mockErr)
-
-		postEmployeeHandler(mockResp, mockReq)
-
-		assert.Equal(t, tc.expCode, mockResp.Code, tc.description)
-
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Errorf("Some expectations were not met %s", err)
-		}
-	}
-}
-
-func TestPostDepartmentHandler(t *testing.T) {
-	db, mock, err = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer db.Close()
-
-	tests := []struct {
-		description string
-		reqBody     department
-		mockSqlFunc func(d department)
-		expCode     int
-	}{
-		{
-			description: "Post a valid department",
-			reqBody:     department{Name: "NewDept"},
-			mockSqlFunc: func(d department) {
-				uuid, _ := uuid2.NewUUID()
-				generatedUUID := uuid.String()
-				mock.ExpectExec(insertIntoDepartmentQuery).WithArgs(sqlmock.AnyArg(), d.Name).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-				rows := mock.NewRows([]string{"id", "name"}).
-					AddRow(generatedUUID, d.Name)
-				mock.ExpectQuery(selectDepartmentByIdQuery).WithArgs(sqlmock.AnyArg()).WillReturnRows(rows)
-			},
-			expCode: 201,
-		},
-	}
-
-	for _, tc := range tests {
-		//mock http
-		reqBody, err := json.Marshal(tc.reqBody)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		mockReq, _ := http.NewRequest("POST", "/department", bytes.NewReader(reqBody))
-		mockResp := httptest.NewRecorder()
-
-		tc.mockSqlFunc(tc.reqBody)
-
-		postDepartmentHandler(mockResp, mockReq)
-
-		assert.Equal(t, tc.expCode, mockResp.Code, tc.description)
-
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Errorf("Some expectations were not met %s", err)
-		}
-	}
-}
-
-// // Mocking request with query params
-//
-//	if tc.reqQueryParams != nil {
-//		queryParams := mockReq.URL.Query()
-//		for key, value := range tc.reqQueryParams {
-//			queryParams.Set(key, value)
-//		}
-//		mockReq.URL.RawQuery = queryParams.Encode()
-//	}

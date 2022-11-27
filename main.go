@@ -1,31 +1,34 @@
 package main
 
 import (
-	"database/sql"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 )
 
-var db *sql.DB
-var err error
-
 func main() {
-	db, err = getDbConnection("mysql", "abishek:mypassword^123@tcp(127.0.0.1:3306)/sample_db")
+
+	db, err := setDbConnection()
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	defer db.Close()
 
-	router := mux.NewRouter()
-	router.HandleFunc("/employee", getEmployeeHandler).Methods("GET")
-	router.HandleFunc("/employee", postEmployeeHandler).Methods("POST")
-	router.HandleFunc("/department", getDepartmentHandler).Methods("GET")
-	router.HandleFunc("/department", postDepartmentHandler).Methods("POST")
+	h := myHandler{db: db}
 
-	//router.HandleFunc("/department{id}", getDepartmentByIdHandler).Methods("GET")
-	//router.HandleFunc("/employee/{id}", getEmployeeByIdHandler).Methods("GET")
+	router := mux.NewRouter()
+
+	router.Handle("/", http.NotFoundHandler())
+
+	router.HandleFunc("/employees", h.getAllEmployees).Methods("GET")
+	router.HandleFunc("/employees/{id}", h.getEmployeeById).Methods("GET")
+	router.HandleFunc("/employees", h.postEmployee).Methods("POST")
+
+	router.HandleFunc("/departments", h.getAllDepartments).Methods("GET")
+	router.HandleFunc("/departments/{id}", h.getDepartmentById).Methods("GET")
+	router.HandleFunc("/departments", h.postDepartment).Methods("POST")
+
 	log.Println("Starting server at http://localhost:8080/")
 	log.Fatal(http.ListenAndServe(":8080", router))
 }

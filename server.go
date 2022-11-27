@@ -5,15 +5,11 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func getDbConnection(driver string, connectionString string) (*sql.DB, error) {
-	db, err := sql.Open(driver, connectionString)
-	if err != nil {
-		return nil, err
-	}
+func setDbConnection() (*sql.DB, error) {
+	driver := "mysql"
+	connectionString := "abishek:mypassword^123@tcp(127.0.0.1)/sample_db"
 
-	if err := db.Ping(); err != nil {
-		return nil, err
-	}
+	db, err := sql.Open(driver, connectionString)
 
 	return db, err
 }

@@ -9,5 +9,5 @@ type employee struct {
 	Id          string     `json:"id"`
 	Name        string     `json:"name"`
 	PhoneNumber string     `json:"phoneNumber"`
-	Dept        department `json:"dept"`
+	Department  department `json:"department"`
 }

@@ -1,158 +1,115 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
-	"fmt"
-	uuid2 "github.com/google/uuid"
-	"io"
+	"github.com/gorilla/mux"
+	"log"
 	"net/http"
-	"os/exec"
-	"strings"
 )
 
-func getEmployeeHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	rows, err := db.Query("select e.id, e.name, phone_number, department_id, d.name from employee e inner join department d on e.department_id = d.id")
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-	}
-
-	defer rows.Close()
-
-	var allEmp []employee
-	for rows.Next() {
-		var emp employee
-		if err := rows.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Dept.Id, &emp.Dept.Name); err != nil {
-			w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-			return
-		}
-		allEmp = append(allEmp, emp)
-	}
-
-	reqBody, err := json.Marshal(allEmp)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
-
-	w.Write(reqBody)
+type myHandler struct {
+	db *sql.DB
 }
 
-func getDepartmentHandler(w http.ResponseWriter, r *http.Request) {
+func (h myHandler) getAllEmployees(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 
-	rows, err := db.Query("select id, name from department")
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+	if r.URL.Query().Has("dept_id") {
+		deptId := r.URL.Query().Get("dept_id")
 
-	defer rows.Close()
-
-	var allDep []department
-	for rows.Next() {
-		var dep department
-		if err := rows.Scan(&dep.Id, &dep.Name); err != nil {
-			w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
+		rows, err := h.db.Query(getAllEmployeeByDeptIdQuery, deptId)
+		if err != nil {
+			log.Println(err)
 			return
 		}
-		allDep = append(allDep, dep)
-	}
+		defer rows.Close()
 
-	reqBody, err := json.Marshal(allDep)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+		var allEmp []employee
+		for rows.Next() {
+			var emp employee
+			if err := rows.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Department.Id, &emp.Department.Name); err != nil {
+				log.Println(err)
+				return
+			}
+			allEmp = append(allEmp, emp)
+		}
+		if len(allEmp) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 
-	w.Write(reqBody)
+		respBody, err := json.Marshal(allEmp)
+		if _, err := w.Write(respBody); err != nil {
+			log.Println(err)
+			return
+		}
+
+	} else {
+		rows, err := h.db.Query(getAllEmployeeQuery)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer rows.Close()
+
+		var allEmp []employee
+		for rows.Next() {
+			var emp employee
+			if err := rows.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Department.Id, &emp.Department.Name); err != nil {
+				log.Println(err)
+				return
+			}
+			allEmp = append(allEmp, emp)
+		}
+
+		respBody, err := json.Marshal(allEmp)
+		if _, err := w.Write(respBody); err != nil {
+			log.Println(err)
+			return
+		}
+
+	}
 }
 
-func postEmployeeHandler(w http.ResponseWriter, r *http.Request) {
+func (h myHandler) getEmployeeById(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
+	empId := mux.Vars(r)["id"]
 
-	reqBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
 	var emp employee
-	if err := json.Unmarshal(reqBody, &emp); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
+	row := h.db.QueryRow(getEmployeeByIdQuery, empId)
+	if err := row.Scan(&emp.Id, &emp.Name, &emp.PhoneNumber, &emp.Department.Id, &emp.Department.Name); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		log.Println(err)
 		return
 	}
-
-	uuid, err := uuid2.NewUUID()
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
-
-	generatedUUID := strings.TrimSpace(uuid.String())
-
-	_, err = db.Exec("insert into employee values(?,?,?,?)", generatedUUID, emp.Name, emp.Dept.Id, emp.PhoneNumber)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
-
-	emp.Id = generatedUUID
 
 	respBody, err := json.Marshal(emp)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
+		log.Println(err)
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
-	w.Write(respBody)
+	if _, err := w.Write(respBody); err != nil {
+		log.Println(err)
+		return
+	}
 }
 
-func postDepartmentHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+func (h myHandler) postEmployee(w http.ResponseWriter, r *http.Request) {
 
-	reqBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
-	var dep department
-	if err := json.Unmarshal(reqBody, &dep); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+}
 
-	uuid, err := exec.Command("uuidgen").Output()
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+func (h myHandler) getAllDepartments(w http.ResponseWriter, r *http.Request) {
 
-	genUUID := strings.TrimSpace(string(uuid))
+}
 
-	_, err = db.Exec("insert into department values(?,?)", genUUID, dep.Name)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+func (h myHandler) getDepartmentById(w http.ResponseWriter, r *http.Request) {
 
-	row := db.QueryRow("select id, name from department where id=?", genUUID)
-	if err := row.Scan(&dep.Id, &dep.Name); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
+}
 
-	respBody, err := json.Marshal(dep)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`{"error":"%s"}`, err)))
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-	w.Write(respBody)
+func (h myHandler) postDepartment(w http.ResponseWriter, r *http.Request) {
+
 }
